@@ -1,0 +1,41 @@
+# Bytecode gerado pelo Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ambientes virtuais
+.venv/
+venv/
+env/
+
+# Empacotamento (ferramentas/gerar_exe.py)
+.build/
+build/
+dist/
+*.spec
+
+# Pacotes para instalação sem internet (ferramentas/baixar_pacotes.py)
+pacotes/
+
+# Perfil local do acervo (o exemplo fica em exemplos/)
+/ged_perfil.json
+
+# Relatórios exportados pelo próprio programa
+busca_ged*.txt
+busca_ged*.csv
+busca_ged*.xlsx
+contagem_ged*.txt
+contagem_ged*.csv
+contagem_ged*.xlsx
+relatorio*.txt
+relatorio*.csv
+relatorio*.xlsx
+
+# Editores
+.vscode/
+.idea/
+*.swp
+
+# Windows
+Thumbs.db
+desktop.ini

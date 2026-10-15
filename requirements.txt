@@ -1,0 +1,8 @@
+# Interface, XML, CSV, XLSX e testes usam só a biblioteca padrão do Python.
+#
+# Os dois componentes abaixo são gratuitos e de licença permissiva. O
+# programa os instala sozinho na primeira execução como script, e o
+# executável (.exe) já os traz embutidos — este arquivo serve para
+# instalação manual, para o CI e para quem desenvolve.
+pypdfium2>=4.30   # PDFs: páginas, texto e miniatura (BSD-3 / Apache-2.0)
+Pillow>=10.4      # TIFF, PNG e JPG; miniaturas (HPND)

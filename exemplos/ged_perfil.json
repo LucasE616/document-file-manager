@@ -1,0 +1,32 @@
+{
+  "tipos": [
+    {
+      "chave": "despesa",
+      "rotulo": "Despesas",
+      "pistas": "despesa",
+      "padroes_nome": [
+        "^despesa[_-](?:(?P<Ano>\\d{4})[_-])?(?P<Numero>\\d+)-(?P<_data>\\d{6})-(?P<_hora>\\d{6})"
+      ]
+    },
+    {
+      "chave": "licitacao",
+      "rotulo": "Licitações",
+      "pistas": "licitac",
+      "padroes_nome": [
+        "^licita[cç][aã]o[_-](?P<Numero>[\\d./-]*?)-(?P<_data>\\d{8})-(?P<_hora>\\d{4})"
+      ]
+    },
+    {
+      "chave": "legislacao",
+      "rotulo": "Legislações",
+      "pistas": "legislac|\\bleis?\\b|decreto|portaria|resoluc",
+      "padroes_nome": [
+        "^(?P<Tipo>lei|lei[_-]complementar|decreto|portaria|resolu[cç][aã]o)[_-](?P<Numero>[\\d.]+)[_-](?P<Ano>\\d{4})"
+      ]
+    }
+  ],
+  "padroes_caminho": [
+    "licita[cç][aã]o[_-](?P<Numero>\\d+)[_-]",
+    "(?:^|[_\\-/\\\\])(?P<Ano>19\\d{2}|20\\d{2})(?:[_\\-/\\\\]|$)"
+  ]
+}

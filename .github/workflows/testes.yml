@@ -1,0 +1,29 @@
+# Roda os testes a cada push e pull request — gratuito em repositório público.
+name: Testes
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  testes:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+        python: ["3.10", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Testes sem os componentes (busca por nome e índice)
+        run: python main.py testes
+
+      - name: Instalar componentes
+        run: python -m pip install -r requirements.txt
+
+      - name: Testes completos
+        run: python main.py testes

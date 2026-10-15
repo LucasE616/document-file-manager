@@ -1,0 +1,44 @@
+# Gera o executável para Windows e publica numa Release do GitHub.
+#
+# Dispara ao criar uma tag de versão:
+#     git tag v1.0.0 && git push origin v1.0.0
+# ou manualmente pela aba Actions ("Run workflow").
+# Gratuito em repositório público.
+name: Executável Windows
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  executavel:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Testes
+        run: |
+          python -m pip install -r requirements.txt
+          python main.py testes
+
+      - name: Gerar executável
+        run: python ferramentas/gerar_exe.py
+
+      - name: Guardar o pacote
+        uses: actions/upload-artifact@v4
+        with:
+          name: GED-Offline-windows
+          path: dist/*.zip
+
+      - name: Publicar na Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
