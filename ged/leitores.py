@@ -121,16 +121,33 @@ class Leitura:
     data_interna: datetime | None = None
 
 
-def _mensagem_pdfium(exc: Exception) -> tuple[str, str]:
+_ARVORE_VAZIA = re.compile(rb"/Type\s*/Pages\b[^>]*?/Count\s+0\b|/Count\s+0\b[^>]*?/Type\s*/Pages\b")
+_PAGINA = re.compile(rb"/Type\s*/Page\b(?!s)")
+LIMITE_INSPECAO = 4 * 1024 * 1024
+
+
+def _sem_paginas(caminho: Path) -> bool:
+    """O PDF declara uma árvore de páginas vazia e nenhuma página?
+
+    O PDFium simplesmente recusa abrir um PDF sem páginas, e o erro que ele
+    informa varia de sistema para sistema ("Success" no Windows, outro no
+    Linux). Olhar a estrutura do arquivo dá a mesma resposta em qualquer um.
+    """
+    try:
+        with open(caminho, "rb") as fh:
+            dados = fh.read(LIMITE_INSPECAO)
+    except OSError:
+        return False
+    return bool(_ARVORE_VAZIA.search(dados)) and not _PAGINA.search(dados)
+
+
+def _mensagem_pdfium(exc: Exception, caminho: Path) -> tuple[str, str]:
     texto = str(exc)
     if "password" in texto.lower():
         return PROTEGIDO, "PDF protegido por senha"
-    if "data format" in texto.lower():
-        return ERRO, "arquivo corrompido ou não é um PDF"
-    # O PDFium recusa abrir um PDF sem nenhuma página, com o código de erro 0
-    if "pdfium: success" in texto.lower():
+    if _sem_paginas(caminho):
         return VAZIO, "o PDF não tem nenhuma página"
-    return ERRO, texto
+    return ERRO, "arquivo corrompido ou não é um PDF"
 
 
 def ler(caminho: Path | str, extensao: str | None = None, verificar_imagem: bool = False) -> Leitura:
@@ -186,7 +203,7 @@ def _ler_pdf(caminho: Path) -> Leitura:
             except Exception:
                 data = None
     except pdfium.PdfiumError as exc:
-        estado, mensagem = _mensagem_pdfium(exc)
+        estado, mensagem = _mensagem_pdfium(exc, caminho)
         return Leitura(0 if estado == VAZIO else None, estado, mensagem)
     if paginas == 0:
         return Leitura(0, VAZIO, "o PDF não tem nenhuma página", data)

@@ -29,6 +29,18 @@ class TestLeitores(TesteComPasta):
         sem = leitores.ler(self.pasta / "sem_paginas.pdf")
         self.assertEqual((sem.estado, sem.paginas), (leitores.VAZIO, 0))
 
+    def test_classificacao_nao_depende_da_mensagem_do_pdfium(self):
+        # A mensagem de erro do PDFium varia entre Windows e Linux
+        vazio = gerar_pdf(self.pasta / "vazio.pdf", 0)
+        ruim = self.pasta / "ruim.pdf"
+        ruim.write_bytes(b"%PDF-1.4 lixo")
+        for mensagem in ("Failed to load document (PDFium: Success).", "Failed (PDFium: Unknown error)."):
+            with self.subTest(mensagem=mensagem):
+                self.assertEqual(leitores._mensagem_pdfium(RuntimeError(mensagem), vazio)[0], leitores.VAZIO)
+                self.assertEqual(leitores._mensagem_pdfium(RuntimeError(mensagem), ruim)[0], leitores.ERRO)
+        senha = RuntimeError("Failed to load document (PDFium: Incorrect password error).")
+        self.assertEqual(leitores._mensagem_pdfium(senha, ruim)[0], leitores.PROTEGIDO)
+
     @sem_pdf
     def test_arquivo_recusado_nao_fica_travado(self):
         # Correção: o PDFium deixava aberto o arquivo que recusava, e no
