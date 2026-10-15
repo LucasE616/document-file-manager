@@ -74,7 +74,7 @@ class TestRelatorios(TesteComPasta):
         conteudo = txt.read_text(encoding="utf-8-sig")
         self.assertIn("RELATÓRIO DE BUSCA", conteudo)
         self.assertIn("arquivo não localizado", conteudo)
-        self.assertNotIn("\r\r\n", txt.read_text(encoding="utf-8-sig", newline=""))
+        self.assertNotIn(b"\r\r\n", txt.read_bytes())
         abas = ler_xlsx(exp_busca.exportar(self.pasta / "b.xlsx", self.catalogo, resultado, criterios))
         self.assertEqual(list(abas), ["Resumo", "Resultado"])
         self.assertEqual(len(abas["Resultado"]), 1 + resultado.total_documentos)

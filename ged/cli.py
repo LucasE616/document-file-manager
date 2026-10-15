@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -207,6 +208,11 @@ def _testes() -> int:
     raiz = Path(__file__).resolve().parent.parent
     suite = unittest.defaultTestLoader.discover(str(raiz / "tests"), top_level_dir=str(raiz))
     resultado = unittest.TextTestRunner(verbosity=1).run(suite)
+    if os.environ.get("GITHUB_ACTIONS"):
+        # Vira anotação no resumo da execução, legível sem abrir o log
+        for teste, rastro in (resultado.failures + resultado.errors)[:10]:
+            texto = rastro[-3000:].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+            print(f"::error title={teste.id()}::{texto}")
     return 0 if resultado.wasSuccessful() else 1
 
 
