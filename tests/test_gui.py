@@ -14,7 +14,9 @@ dos botões.
 """
 from __future__ import annotations
 
+import gc
 import os
+import sys
 import threading
 import time
 import traceback
@@ -56,6 +58,21 @@ class _DialogoQueConfirma:
         self.perfil_alterado = False
 
 
+def _coletar_lixo_do_tk():
+    """Recolhe o lixo do Tk na thread principal, antes que uma thread de trabalho o faça.
+
+    O coletor de lixo do Python roda na thread que estiver alocando memória.
+    Se for uma thread de trabalho e o lixo for uma `StringVar` de uma janela
+    já fechada, o tkinter tenta repassar a chamada à thread principal e
+    espera 1 s por variável, porque o teste usa `update()` em vez de
+    `mainloop()`: no CI, a leitura do diretório parou por 8 s ("o diretório
+    não foi lido"). Se o lixo for a própria instância do Tk, o processo aborta
+    ("Tcl_AsyncDelete: async handler deleted by the wrong thread").
+    No programa isso não acontece: há uma janela só, sempre no `mainloop()`.
+    """
+    gc.collect()
+
+
 @unittest.skipIf(MOTIVO, MOTIVO)
 class TesteJanela(TesteComPasta):
     def setUp(self):
@@ -64,37 +81,54 @@ class TesteJanela(TesteComPasta):
                      mock.patch.object(modulo_consulta, "DialogoTipo", _DialogoQueConfirma)):
             alvo.start()
             self.addCleanup(alvo.stop)
+        # Exceção dentro de um callback do Tk abriria uma janela de erro, e a
+        # de um __del__ só seria impressa: o teste nem perceberia. Aqui as
+        # duas são guardadas e reprovadas no fim.
+        self.erros_tk: list[str] = []
+        anterior = sys.unraisablehook
+        sys.unraisablehook = self._guardar_ignorada
+        self.addCleanup(setattr, sys, "unraisablehook", anterior)
+        self.addCleanup(self._sem_erros_no_tk)
+
+        _coletar_lixo_do_tk()
         self.app = modulo_app.App()
         self.app.withdraw()
         self.app.wait_window = lambda _janela=None: None
-        # Exceção dentro de um callback do Tk abriria uma janela de erro e o
-        # teste nem perceberia: aqui ela é guardada e reprovada no fim.
-        self.erros_tk: list[str] = []
         self.app.report_callback_exception = (
             lambda tipo, valor, rastro: self.erros_tk.append("".join(traceback.format_exception(tipo, valor, rastro)))
         )
-        self.addCleanup(self._sem_erros_no_tk)
         self.addCleanup(self._fechar)
+
+    def _guardar_ignorada(self, ignorada):
+        rastro = "".join(traceback.format_exception(ignorada.exc_type, ignorada.exc_value, ignorada.exc_traceback))
+        self.erros_tk.append(f"exceção ignorada em {ignorada.object!r}:\n{rastro}")
 
     def _sem_erros_no_tk(self):
         if self.erros_tk:
-            self.fail("exceção num callback da interface:\n" + "\n".join(self.erros_tk))
+            self.fail("exceção na interface (callback do Tk ou __del__):\n" + "\n".join(self.erros_tk))
 
-    def _fechar(self):
-        self.app._cancelar.set()
+    def _fechar(self, atributo="app"):
+        """Fecha a janela guardada em `self.<atributo>` e recolhe o lixo dela na thread principal."""
+        app = getattr(self, atributo)
+        setattr(self, atributo, None)
+        app._cancelar.set()
         try:
-            pendentes = self.app.tk.splitlist(self.app.tk.call("after", "info"))
-        except tk.TclError:
-            pendentes = ()
-        for ident in pendentes:
-            try:
-                self.app.after_cancel(ident)
-            except tk.TclError:
-                pass
-        try:
-            self.app.destroy()
+            # Direto no Tcl: o after_cancel do tkinter quebra (TypeError) com
+            # os `after` que o próprio Tk agenda em algumas versões.
+            for ident in app.tk.splitlist(app.tk.call("after", "info")):
+                try:
+                    app.tk.call("after", "cancel", ident)
+                except tk.TclError:
+                    pass
         except tk.TclError:
             pass
+        finally:
+            try:
+                app.destroy()
+            except tk.TclError:
+                pass
+            del app
+            _coletar_lixo_do_tk()
 
     def esperar(self, condicao, limite=8.0, mensagem="a condição não aconteceu a tempo"):
         fim = time.monotonic() + limite
@@ -113,6 +147,7 @@ class TesteJanela(TesteComPasta):
             time.sleep(0.01)
 
     def ler_acervo(self):
+        _coletar_lixo_do_tk()
         montar_acervo(self.pasta)
         self.app.var_diretorio.set(str(self.pasta))
         self.app.ler_diretorio()
@@ -176,6 +211,7 @@ class TestAbaContagem(TesteJanela):
     def contar(self):
         contagem = self.app.contagem
         contagem.resultado = None
+        _coletar_lixo_do_tk()
         contagem.contar()
         self.esperar(lambda: contagem.resultado is not None, mensagem="a contagem não terminou")
         return contagem.resultado
@@ -411,6 +447,31 @@ class TestRegressaoInterface(TesteJanela):
         # A interrompida foi substituída: o resultado dela não é entregue
         self.assertEqual(concluidas, ["principal"])
         self.assertEqual(str(self.app.botao_ler["state"]), "normal")
+
+    def test_janela_fechada_nao_deixa_lixo_do_tk_para_as_threads(self):
+        """Correção: o lixo de uma janela fechada, coletado numa thread de trabalho, travava a leitura.
+
+        No CI, a StringVar de uma janela de teste já fechada era destruída
+        pela thread que lia o diretório; o tkinter esperava 1 s por variável
+        pela thread principal, a leitura estourava o tempo e o teste falhava
+        com "o diretório não foi lido". Fechar a janela tem de recolher esse
+        lixo na thread principal.
+        """
+        self.outra = modulo_app.App()
+        self.outra.withdraw()
+        self.outra.var_diretorio.set(str(self.pasta))  # janela usada, com variáveis preenchidas
+        self._fechar("outra")
+
+        gc.disable()  # a coleta tem de acontecer só onde o teste mandar
+        try:
+            terminou = threading.Event()
+            inicio = time.monotonic()
+            threading.Thread(target=lambda: (gc.collect(), terminou.set()), daemon=True).start()
+            self.esperar(terminou.is_set, limite=5)
+        finally:
+            gc.enable()
+        self.assertLess(time.monotonic() - inicio, 0.9, "a coleta na thread de trabalho ficou esperando o Tk")
+        self.assertEqual(self.erros_tk, [])
 
     def test_erro_na_tarefa_aparece_e_libera_a_interface(self):
         def quebra(progresso, cancelado):
