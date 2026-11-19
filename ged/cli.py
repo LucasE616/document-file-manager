@@ -2,6 +2,7 @@
 
     python main.py buscar "D:\\ACERVO\\2019" --filtro "Favorecido=CEMIG" --saida relatorio.txt
     python main.py contar "D:\\ACERVO\\2019" --tipos pdf,tif --aprofundada --saida contagem.xlsx
+    python main.py tipos criar "Contratos" --indices "Contratado,Objeto,Vigência"
 
 Útil para conferência rápida, para gerar relatório agendado e para testes.
 """
@@ -71,7 +72,8 @@ def montar_parser() -> argparse.ArgumentParser:
     b.add_argument("--filtro", action="append", type=_par_filtro, default=[], metavar="CAMPO=VALOR",
                    help="Filtro por campo de índice (repetível).")
     b.add_argument("--conteudo", action="store_true", help="Procurar também dentro do texto dos PDFs.")
-    b.add_argument("--tipo", help="Tipo do perfil (despesa, licitacao, legislacao...) ou outro.")
+    b.add_argument("--tipo", help="Tipo do perfil (despesa, licitacao, legislacao, os criados com "
+                                  "'tipos criar'...) ou outro.")
     b.add_argument("--indices", help='Com --tipo outro: índices a buscar, separados por vírgula.')
     b.add_argument("--indice-de", type=_data, default="", help="Início do período sobre a data do índice.")
     b.add_argument("--indice-ate", type=_data, default="", help="Fim do período sobre a data do índice.")
@@ -88,6 +90,19 @@ def montar_parser() -> argparse.ArgumentParser:
     c.add_argument("--ate", type=_data, default="", help="Fim do período.")
     c.add_argument("--aprofundada", action="store_true", help="SHA-256, PDF/A declarado e integridade das imagens.")
     c.add_argument("--problemas", type=int, default=15, help="Quantos problemas listar no terminal.")
+
+    t = sub.add_parser("tipos", help="Lista, cria ou exclui tipos documentais do perfil.")
+    t.add_argument("--perfil", metavar="JSON",
+                   help="Perfil a usar e alterar (padrão: ged_perfil.json ao lado do programa).")
+    acoes = t.add_subparsers(dest="acao")
+    tc = acoes.add_parser("criar", help="Cria um tipo documental com os índices informados.")
+    tc.add_argument("nome", help='Nome do tipo, como aparece na tela (ex.: "Contratos").')
+    tc.add_argument("--indices", required=True,
+                    help='Índices do tipo, separados por vírgula (ex.: "Contratado,Objeto,Vigência").')
+    tc.add_argument("--palavras", default="",
+                    help="Palavras-chave procuradas no nome das pastas e no Título do índice, separadas por vírgula.")
+    te = acoes.add_parser("excluir", help="Exclui um tipo documental do perfil.")
+    te.add_argument("chave", help="Chave ou nome do tipo (veja 'tipos').")
 
     sub.add_parser("testes", help="Roda os testes automáticos.")
     return parser
@@ -202,6 +217,50 @@ def _contar(args) -> int:
     return 0
 
 
+def _perfil_para_tipos(args) -> perfis.Perfil:
+    if args.perfil:
+        caminho = Path(args.perfil)
+        # Criar o primeiro tipo num perfil que ainda não existe é permitido:
+        # ele nasce do perfil padrão.
+        if not caminho.exists() and getattr(args, "acao", None) == "criar":
+            perfil = perfis.montar(perfis.PERFIL_PADRAO)
+            perfil.origem = str(caminho)
+            return perfil
+        return perfis.carregar_arquivo(caminho)
+    return perfis.ativo()
+
+
+def _tipos_cmd(args) -> int:
+    perfil = _perfil_para_tipos(args)
+    if args.acao == "criar":
+        perfil, chave = perfis.criar_tipo(perfil, args.nome, args.indices, args.palavras)
+        perfil = perfis.salvar(perfil)
+        perfis.definir(perfil)
+        tipo = perfil.tipo(chave)
+        print(f'Tipo "{tipo.rotulo}" criado (chave: {chave}), com os índices: {", ".join(tipo.indices)}.')
+        print(f"Perfil gravado em {perfil.origem}")
+        return 0
+    if args.acao == "excluir":
+        pedido = normalizar(args.chave)
+        tipo = next((t for t in perfil.tipos if pedido in (normalizar(t.chave), normalizar(t.rotulo))), None)
+        if tipo is None:
+            print(f"Tipo '{args.chave}' não encontrado. Use: {', '.join(t.chave for t in perfil.tipos)}",
+                  file=sys.stderr)
+            return 2
+        perfil = perfis.salvar(perfis.excluir_tipo(perfil, tipo.chave))
+        perfis.definir(perfil)
+        print(f'Tipo "{tipo.rotulo}" excluído. Perfil gravado em {perfil.origem}')
+        return 0
+
+    print(f"Perfil: {perfil.origem}")
+    for tipo in perfil.tipos:
+        indices = ", ".join(tipo.indices) if tipo.indices else "os que os documentos trouxerem"
+        print(f"  {tipo.chave:<16} {tipo.rotulo}  —  índices: {indices}")
+        if tipo.palavras:
+            print(f"  {'':<16} palavras-chave: {', '.join(tipo.palavras)}")
+    return 0
+
+
 def _testes() -> int:
     import unittest
 
@@ -235,6 +294,12 @@ def principal(argv: list[str]) -> int:
         return 2
     if args.comando == "testes":
         return _testes()
+    if args.comando == "tipos":
+        try:
+            return _tipos_cmd(args)
+        except perfis.ErroPerfil as exc:
+            print(f"Erro: {exc}", file=sys.stderr)
+            return 2
     from . import dependencias
 
     dependencias.garantir_no_terminal()

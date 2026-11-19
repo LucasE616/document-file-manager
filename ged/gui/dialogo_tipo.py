@@ -6,7 +6,9 @@ from dataclasses import dataclass, field
 from tkinter import messagebox, ttk
 
 from .. import catalogo as cat
+from .. import perfil as perfis
 from ..texto import formatar_inteiro
+from .dialogo_novo_tipo import DialogoNovoTipo
 from .widgets import COR_AVISO, COR_DICA, COR_SUAVE, AreaRolavel
 
 
@@ -22,6 +24,10 @@ class DialogoTipo(tk.Toplevel):
     """Mostra os tipos do perfil — cada um com quantos documentos dele existem
     na pasta — e a opção "Outro tipo de documento", em que o próprio usuário
     escolhe quais índices quer buscar.
+
+    Dali também se cria um tipo documental novo, e se excluem os criados.
+    Quando isso acontece, `perfil_alterado` fica verdadeiro: quem abriu o
+    diálogo precisa reagrupar o catálogo pelos tipos novos.
     """
 
     def __init__(self, master, grupos: list[cat.GrupoTipo], sem_tipo: int,
@@ -30,6 +36,8 @@ class DialogoTipo(tk.Toplevel):
         self.title("Tipo de documento")
         self.resizable(False, False)
         self.escolha: Escolha | None = None
+        self.perfil_alterado = False
+        self._contagem = contagem
 
         corpo = ttk.Frame(self, padding=(16, 14))
         corpo.pack(fill="both", expand=True)
@@ -40,6 +48,7 @@ class DialogoTipo(tk.Toplevel):
 
         self.var_tipo = tk.StringVar(value=atual.chave)
 
+        perfil = perfis.ativo()
         for grupo in grupos:
             vazio = grupo.total_documentos == 0
             if vazio:
@@ -47,13 +56,23 @@ class DialogoTipo(tk.Toplevel):
             else:
                 detalhe = (f"{formatar_inteiro(grupo.total_documentos)} documento(s) · "
                            f"{formatar_inteiro(grupo.total_paginas)} página(s)")
-            ttk.Radiobutton(corpo, text=f"{grupo.rotulo}   —   {detalhe}", value=grupo.chave,
+            linha = ttk.Frame(corpo)
+            linha.pack(fill="x", pady=(2, 0))
+            ttk.Radiobutton(linha, text=f"{grupo.rotulo}   —   {detalhe}", value=grupo.chave,
                             variable=self.var_tipo, command=self._ao_trocar,
-                            state="disabled" if vazio else "normal").pack(anchor="w", pady=(2, 0))
+                            state="disabled" if vazio else "normal").pack(side="left")
+            tipo = perfil.tipo(grupo.chave)
+            if tipo is not None and tipo.indices:
+                # Só os tipos com índices declarados — os criados pelo usuário
+                ttk.Button(linha, text="Excluir", width=8,
+                           command=lambda g=grupo: self._excluir(g)).pack(side="right", padx=(12, 0))
             if not vazio:
                 indices = ", ".join(grupo.vocabulario[:7]) + ("..." if len(grupo.vocabulario) > 7 else "")
                 ttk.Label(corpo, text=f"        índices: {indices or '(nenhum)'}", foreground=COR_DICA,
                           font=("", 8)).pack(anchor="w")
+            if grupo.indices_ausentes:
+                ttk.Label(corpo, text=f"        sem documentos com: {', '.join(grupo.indices_ausentes)}",
+                          foreground=COR_DICA, font=("", 8)).pack(anchor="w")
 
         ttk.Separator(corpo).pack(fill="x", pady=10)
 
@@ -102,6 +121,7 @@ class DialogoTipo(tk.Toplevel):
 
         botoes = ttk.Frame(corpo)
         botoes.pack(fill="x", pady=(16, 0))
+        ttk.Button(botoes, text="Criar tipo documental...", command=self.criar_tipo).pack(side="left")
         ttk.Button(botoes, text="Confirmar", command=self._confirmar).pack(side="right")
         ttk.Button(botoes, text="Cancelar", command=self.destroy).pack(side="right", padx=6)
 
@@ -120,6 +140,35 @@ class DialogoTipo(tk.Toplevel):
         estado = "normal" if self.var_tipo.get() == cat.TIPO_OUTRO else "disabled"
         for widget in self._caixas + self._botoes_atalho:
             widget.configure(state=estado)
+
+    def criar_tipo(self) -> None:
+        """Abre o cadastro de tipo; se criado, ele já vira a escolha."""
+        iniciais = []
+        if self.var_tipo.get() == cat.TIPO_OUTRO:
+            iniciais = [campo for campo, var in self._marcas.items() if var.get()]
+        cadastro = DialogoNovoTipo(self, self._contagem, iniciais)
+        self.wait_window(cadastro)
+        if cadastro.chave_criada:
+            self.perfil_alterado = True
+            self.escolha = Escolha(chave=cadastro.chave_criada)
+            self.destroy()
+
+    def _excluir(self, grupo: cat.GrupoTipo) -> None:
+        if not messagebox.askyesno(
+            "Excluir tipo documental",
+            f'Excluir o tipo "{grupo.rotulo}"?\n\nOs documentos não são afetados: só deixam de ser '
+            "agrupados sob este tipo.",
+            parent=self,
+        ):
+            return
+        try:
+            perfil = perfis.salvar(perfis.excluir_tipo(perfis.ativo(), grupo.chave))
+        except perfis.ErroPerfil as exc:
+            messagebox.showerror("Excluir tipo documental", str(exc), parent=self)
+            return
+        perfis.definir(perfil)
+        self.perfil_alterado = True
+        self.destroy()
 
     def _marcar(self, valor: bool) -> None:
         for var in self._marcas.values():

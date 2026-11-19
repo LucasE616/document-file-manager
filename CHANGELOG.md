@@ -1,5 +1,22 @@
 # Histórico de versões
 
+## Não lançado
+
+### Novo
+
+- **Criar tipo documental**: na pergunta do tipo de documento, o botão *Criar tipo documental...* cadastra um tipo com nome, índices e palavras-chave opcionais. O tipo é gravado no `ged_perfil.json` e aparece nas próximas aberturas; os índices dele viram os campos de busca e as colunas. Tipos criados podem ser excluídos na mesma lista.
+- Documentos que nenhuma outra pista enquadra entram no tipo criado cujos índices eles mais preenchem no XML.
+- Linha de comando: `tipos` (listar), `tipos criar` e `tipos excluir`; `buscar --tipo` aceita os tipos criados.
+- Testes da **interface gráfica** (`tests/test_gui.py`): a janela de verdade, dirigida pelo teste, no CI do Windows e do Linux (tela virtual Xvfb).
+- Testes de **regressão** reunidos e documentados (`tests/test_regressao.py` e a convenção `Correção:`), guia de testes em `tests/README.md` e modelo de pull request com checklist.
+- CI mede a **cobertura** dos testes e falha abaixo do piso de `.coveragerc` (80%, contando ramificações).
+
+### Corrigido
+
+- A pré-visualização deixava um laço de espera rodando para sempre quando a seleção mudava antes de a miniatura ficar pronta (PDF grande ou em rede); o uso de CPU crescia a cada troca rápida de seleção.
+- Interromper a contagem de páginas em segundo plano para começar outra tarefa podia reativar o botão *Ler diretório* e zerar a barra de progresso com a tarefa nova ainda rodando.
+- A miniatura de imagens grandes era convertida para RGB no tamanho original antes de reduzir: uma planta de 500 megapixels ocupava 1,5 GB de memória. Agora o JPEG é decodificado já reduzido e as demais imagens são reduzidas antes da conversão.
+
 ## 1.0.0 — 15/10/2026
 
 Primeira versão unificada: o **GED Offline 0.1** e o **Contador de Páginas** num programa só, sobre a mesma leitura do diretório.
@@ -19,7 +36,7 @@ Primeira versão unificada: o **GED Offline 0.1** e o **Contador de Páginas** n
 - **Executável Windows** (`ferramentas/gerar_exe.py`), com tudo embutido: o usuário não instala nada.
 - Instalação sem internet a partir da pasta `pacotes/` (`ferramentas/baixar_pacotes.py`).
 - Linha de comando com subcomandos `buscar` e `contar`, saída em TXT/CSV/XLSX.
-- Testes automáticos com `unittest` (80 testes), arquivos de exemplo gerados na hora — sem dados reais nem caminhos fixos.
+- Testes automáticos com `unittest` (81 testes), arquivos de exemplo gerados na hora — sem dados reais nem caminhos fixos.
 - GitHub Actions: testes em Windows e Linux; geração do executável a cada tag de versão.
 
 ### Trocado

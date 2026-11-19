@@ -285,10 +285,7 @@ def miniatura_ppm(caminho: Path | str, largura: int = 230) -> bytes | None:
                 finally:
                     pagina.close()
         elif extensao in EXTENSOES_IMAGEM:
-            with image.open(caminho) as img:
-                img.seek(0)
-                figura = img.convert("RGB")
-                figura.thumbnail((largura, largura * 2))
+            figura = _miniatura_imagem(image, caminho, largura)
         else:
             return None
         saida = io.BytesIO()
@@ -296,6 +293,32 @@ def miniatura_ppm(caminho: Path | str, largura: int = 230) -> bytes | None:
         return saida.getvalue()
     except Exception:
         return None
+
+
+# Modos que o Pillow reduz com suavização sem converter antes. Os demais
+# ("1" das digitalizações em preto e branco, "P", "I;16") são convertidos
+# para 8 bits primeiro — reduzir "1" direto sairia serrilhado.
+_MODOS_REDUZIVEIS = frozenset({"L", "LA", "RGB", "RGBA", "RGBX", "CMYK", "YCbCr"})
+
+
+def _miniatura_imagem(image, caminho: Path, largura: int):
+    """Miniatura reduzindo antes de converter.
+
+    Antes, a imagem era convertida para RGB no tamanho original e só depois
+    reduzida: uma planta de 500 megapixels ocupava 1,5 GB de memória para
+    gerar uma miniatura de 230 pixels. O JPEG agora já é decodificado
+    reduzido (`draft`), e as outras imagens são reduzidas no próprio modo.
+    """
+    tamanho = (largura, largura * 2)
+    with image.open(caminho) as img:
+        img.seek(0)
+        img.draft("RGB", tamanho)
+        if img.mode in _MODOS_REDUZIVEIS:
+            img.thumbnail(tamanho)
+            return img.convert("RGB")
+        fonte = img.convert("L" if img.mode == "1" else "RGB")
+    fonte.thumbnail(tamanho)
+    return fonte.convert("RGB")
 
 
 # ----------------------------------------------------------- conferência

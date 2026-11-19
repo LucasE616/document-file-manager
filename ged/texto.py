@@ -21,6 +21,15 @@ def normalizar(texto: str) -> str:
     return sem_acento.casefold()
 
 
+def chave_campo(nome: str) -> str:
+    """Nome de campo reduzido a letras e dígitos: "Vigência do Contrato" -> "vigenciadocontrato".
+
+    Serve para comparar nomes de índice digitados pelo usuário com os que
+    vieram do XML, que variam em acento, caixa, espaço e pontuação.
+    """
+    return "".join(c for c in normalizar(nome) if c.isalnum() and c.isascii())
+
+
 def contem(agulha: str, palheiro: str) -> bool:
     """Busca por substring, ignorando acento e caixa."""
     if not agulha:

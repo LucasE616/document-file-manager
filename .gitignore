@@ -39,3 +39,9 @@ relatorio*.xlsx
 # Windows
 Thumbs.db
 desktop.ini
+
+# Cobertura dos testes (coverage.py)
+.coverage
+.coverage.*
+htmlcov/
+cobertura.txt

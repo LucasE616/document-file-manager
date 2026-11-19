@@ -40,7 +40,6 @@ class App(tk.Tk):
         self.catalogo_completo: cat.Catalogo | None = None
         self.cache = cont.CacheConteudo()
 
-        self._fila: queue.Queue = queue.Queue()
         self._trabalho: threading.Thread | None = None
         self._trabalho_secundario = False
         self._cancelar = threading.Event()
@@ -198,25 +197,34 @@ class App(tk.Tk):
         self.definir_status(status)
         self._ultimo_progresso = 0.0
 
+        # Uma fila por tarefa. Com uma fila só, o laço que esvaziava a fila
+        # de uma tarefa já interrompida podia encerrar a interface da tarefa
+        # seguinte — reativando "Ler diretório" no meio da leitura.
+        fila: queue.Queue = queue.Queue()
+
+        def progresso(dados: cat.Progresso) -> None:
+            self._progresso_da_thread(fila, dados)
+
         def alvo() -> None:
             try:
-                resultado = trabalho(self._progresso_da_thread, self._cancelar.is_set)
+                resultado = trabalho(progresso, self._cancelar.is_set)
             except Exception:
-                self._fila.put(("erro", traceback.format_exc()))
+                fila.put(("erro", traceback.format_exc()))
                 return
-            self._fila.put(("fim", ao_concluir, resultado))
+            fila.put(("fim", ao_concluir, resultado))
 
-        self._trabalho = threading.Thread(target=alvo, daemon=True)
-        self._trabalho.start()
-        self.after(INTERVALO_FILA_MS, self._drenar_fila)
+        tarefa = threading.Thread(target=alvo, daemon=True)
+        self._trabalho = tarefa
+        tarefa.start()
+        self.after(INTERVALO_FILA_MS, lambda: self._drenar_fila(tarefa, fila))
         return True
 
-    def _progresso_da_thread(self, progresso: cat.Progresso) -> None:
+    def _progresso_da_thread(self, fila: queue.Queue, progresso: cat.Progresso) -> None:
         """Chamado pela thread: só enfileira, e no máximo dez vezes por segundo."""
         agora = time.monotonic()
         if agora - self._ultimo_progresso >= INTERVALO_PROGRESSO_S or progresso.atual >= progresso.total > 0:
             self._ultimo_progresso = agora
-            self._fila.put(("progresso", progresso))
+            fila.put(("progresso", progresso))
 
     def cancelar(self) -> None:
         self._cancelar.set()
@@ -228,11 +236,15 @@ class App(tk.Tk):
         self.botao_ler.configure(state="normal")
         self.botao_cancelar.configure(state="disabled")
 
-    def _drenar_fila(self) -> None:
+    def _drenar_fila(self, tarefa: threading.Thread, fila: queue.Queue) -> None:
+        if tarefa is not self._trabalho:
+            # Tarefa substituída por outra (a contagem em segundo plano,
+            # interrompida a pedido do usuário): a interface já é da outra.
+            return
         ultimo: cat.Progresso | None = None
         try:
             while True:
-                item = self._fila.get_nowait()
+                item = fila.get_nowait()
                 tipo = item[0]
                 if tipo == "progresso":
                     ultimo = item[1]
@@ -255,8 +267,8 @@ class App(tk.Tk):
             else:
                 contador = ""
             self.definir_status(f"[{ultimo.fase}] {contador}{ultimo.mensagem}")
-        if self._trabalho and self._trabalho.is_alive() or not self._fila.empty():
-            self.after(INTERVALO_FILA_MS, self._drenar_fila)
+        if tarefa.is_alive() or not fila.empty():
+            self.after(INTERVALO_FILA_MS, lambda: self._drenar_fila(tarefa, fila))
         else:
             self._terminar()
 
