@@ -1,4 +1,10 @@
 # Roda os testes a cada push e pull request — gratuito em repositório público.
+#
+# Três camadas, todas pelo mesmo `python main.py testes`:
+#   - unitários e de regressão (tests/test_*.py), sem tela;
+#   - interface gráfica (tests/test_gui.py), a janela de verdade: no Linux
+#     dentro do Xvfb, uma tela virtual; no Windows na tela do próprio runner;
+#   - cobertura: falha se cair abaixo do piso definido em .coveragerc.
 name: Testes
 
 on:
@@ -13,17 +19,42 @@ jobs:
         os: [windows-latest, ubuntu-latest]
         python: ["3.10", "3.13"]
     runs-on: ${{ matrix.os }}
+    env:
+      # Linux: roda tudo dentro do Xvfb. Windows: já tem tela.
+      TELA: ${{ matrix.os == 'ubuntu-latest' && 'xvfb-run -a' || '' }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
 
+      - name: Tela virtual (Linux)
+        if: runner.os == 'Linux'
+        run: command -v xvfb-run || (sudo apt-get update && sudo apt-get install -y xvfb)
+
       - name: Testes sem os componentes (busca por nome e índice)
-        run: python main.py testes
+        shell: bash
+        run: $TELA python main.py testes
 
       - name: Instalar componentes
-        run: python -m pip install -r requirements.txt
+        run: python -m pip install -r requirements.txt coverage
 
-      - name: Testes completos
-        run: python main.py testes
+      - name: Testes completos, com cobertura
+        shell: bash
+        env:
+          # No Windows a interface sempre existe: se os testes de tela forem
+          # pulados, é defeito, e o passo falha em vez de passar em silêncio.
+          GED_EXIGIR_INTERFACE: ${{ runner.os == 'Windows' && '1' || '' }}
+        run: $TELA python -m coverage run main.py testes
+
+      - name: Relatório de cobertura
+        if: runner.os == 'Windows' && matrix.python == '3.13'
+        shell: bash
+        run: |
+          python -m coverage report | tee cobertura.txt
+          {
+            echo '### Cobertura dos testes'
+            echo '```'
+            cat cobertura.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -9,7 +9,7 @@ Junta num único programa dois projetos anteriores:
 
 Os dois trabalham sobre a mesma leitura do diretório, e juntos fazem algo que nenhum fazia sozinho: **conferir o que os índices dizem contra o que os arquivos realmente têm**.
 
-Nada é gravado no acervo nem fora dele: os únicos arquivos que saem do programa são os relatórios que você mandar exportar.
+Nada é gravado no acervo: os únicos arquivos que o programa grava são os relatórios que você mandar exportar e, se você criar um tipo documental, o perfil `ged_perfil.json` ao lado do programa.
 
 ## Como usar
 
@@ -78,11 +78,26 @@ Toda vez que um diretório é lido, a aba Consulta pergunta qual tipo documental
 
 O botão **Tipo:** reabre a pergunta a qualquer momento. Quem está só na aba de contagem não é interrompido: a pergunta espera até a aba Consulta ser aberta.
 
-Para enquadrar cada documento, as pistas são tentadas da mais específica para a mais genérica: o padrão do nome do arquivo (`despesa_…`, `licitacao_…`), depois o campo *Título* do índice, depois o nome das pastas entre o documento e o diretório escolhido. Pastas acima do diretório escolhido não contam, e palavras curtas precisam aparecer inteiras — "Leilão", que é modalidade de licitação, não é confundido com lei.
+Para enquadrar cada documento, as pistas são tentadas da mais específica para a mais genérica: o padrão do nome do arquivo (`despesa_…`, `licitacao_…`), depois o campo *Título* do índice, depois o nome das pastas entre o documento e o diretório escolhido e, por último, os índices preenchidos (nos tipos criados por você). Pastas acima do diretório escolhido não contam, e palavras curtas precisam aparecer inteiras — "Leilão", que é modalidade de licitação, não é confundido com lei.
+
+### Criar um tipo documental
+
+Para buscar um tipo de documento que o programa ainda não conhece — Contratos, Portarias de pessoal, Processos, Atas —, crie o tipo uma vez e ele passa a aparecer na lista toda vez que o programa abrir:
+
+1. Na pergunta do tipo de documento, clique em **Criar tipo documental...**. Se você estava em *Outro tipo de documento* com índices marcados, eles já vêm marcados.
+2. Dê um **nome** ao tipo.
+3. Marque os **índices** do tipo entre os que a pasta tem (entre parênteses, em quantos documentos cada um está preenchido) e, se quiser, digite outros que esta pasta ainda não tem.
+4. Opcionalmente, informe **palavras-chave** procuradas no nome das pastas e no campo *Título* — `contrato` reconhece a pasta `CONTRATOS_2021`.
+
+Os índices do tipo viram os campos de busca e as colunas, nessa ordem. Um documento entra no tipo pelas palavras-chave ou, se nenhuma outra pista o enquadrou, por ter índices do tipo preenchidos no XML — vence o tipo com mais índices preenchidos. Os nomes dos índices são comparados sem acento e sem diferença de maiúsculas: `Vigencia` acha `Vigência`.
+
+Tipos criados por você têm um botão **Excluir** na mesma lista. Os documentos não são afetados: só deixam de ser agrupados sob aquele tipo.
+
+O tipo é gravado no `ged_perfil.json` ao lado do programa (ou no perfil indicado com `--perfil`). Copiar esse arquivo para outra máquina leva os tipos junto.
 
 ### Perfil do acervo
 
-Os tipos documentais e os padrões de nome não estão escritos no código: estão num perfil. O perfil padrão atende Despesas, Licitações e Legislações. Para outro acervo, copie [`exemplos/ged_perfil.json`](exemplos/ged_perfil.json) para a pasta do programa com o nome `ged_perfil.json` e edite — o programa passa a usá-lo, sem alterar nada no código.
+Os tipos documentais e os padrões de nome não estão escritos no código: estão num perfil. O perfil padrão atende Despesas, Licitações e Legislações. Criar um tipo pela janela ou pela linha de comando já grava o perfil; para ajustes finos (padrões de nome de arquivo, por exemplo), copie [`exemplos/ged_perfil.json`](exemplos/ged_perfil.json) para a pasta do programa com o nome `ged_perfil.json` e edite — o programa passa a usá-lo, sem alterar nada no código. Cada tipo aceita `chave`, `rotulo`, `pistas`, `padroes_nome` e, opcionalmente, `indices` (os campos de busca do tipo) e `palavras` (as palavras-chave digitadas ao criá-lo).
 
 ## Datas e períodos
 
@@ -166,10 +181,13 @@ CSV com separador `;` e UTF-8 com BOM — é o que faz o Excel em português abr
 ```bash
 python main.py buscar "D:\ACERVO\2019" --filtro "Favorecido=CEMIG" --saida relatorio.txt
 python main.py contar "D:\ACERVO\2019" --tipos pdf,tif --de 2019 --ate 2019 --aprofundada --saida contagem.xlsx
+python main.py tipos criar "Contratos" --indices "Contratado,Objeto,Vigência" --palavras "contrato,aditivo"
+python main.py buscar "D:\ACERVO\CONTRATOS" --tipo contratos --filtro "Contratado=ACME"
 ```
 
-- `buscar`: `--termo`, `--filtro CAMPO=VALOR` (repetível), `--conteudo`, `--tipo despesa|licitacao|legislacao|outro`, `--indices "A,B"` (com `--tipo outro`), `--indice-de`, `--indice-ate`, `--arquivo-de`, `--arquivo-ate`, `--limite`
+- `buscar`: `--termo`, `--filtro CAMPO=VALOR` (repetível), `--conteudo`, `--tipo despesa|licitacao|legislacao|<tipo criado>|outro`, `--indices "A,B"` (com `--tipo outro`), `--indice-de`, `--indice-ate`, `--arquivo-de`, `--arquivo-ate`, `--limite`
 - `contar`: `--tipos pdf,pdfa,tif,png,jpg,svg|todos`, `--de`, `--ate`, `--aprofundada`, `--problemas N`
+- `tipos`: lista os tipos do perfil; `tipos criar NOME --indices "A,B" [--palavras "x,y"]`; `tipos excluir CHAVE` — com `--perfil ARQUIVO.json` para escolher qual perfil alterar
 - comuns: `--saida ARQUIVO` (.txt, .csv ou .xlsx, repetível), `--base-data criacao|modificacao|interna`, `--sem-subpastas`, `--perfil ARQUIVO.json`
 
 `python main.py --help` e `python main.py buscar --help` listam tudo. A forma antiga `python main.py --buscar DIR` continua aceita.
@@ -191,14 +209,17 @@ Para instalar o script em máquinas **sem internet**, rode `python ferramentas/b
 
 ```bash
 python main.py testes                  # testes automáticos (unittest, sem dependências)
+xvfb-run -a python main.py testes      # no Linux sem tela, incluindo os testes da janela
 python ferramentas/gerar_exe.py        # gera dist/GED Offline/ e o .zip para distribuir
 ```
+
+Os testes têm três camadas — **unitários** do núcleo, **de regressão** (cada defeito corrigido ganha um teste que falha se ele voltar) e **de interface** (a janela de verdade, dirigida pelo teste) —, e o CI exige uma cobertura mínima, definida em `.coveragerc`. Como escrever cada um, e o checklist de uma alteração, estão em [`tests/README.md`](tests/README.md).
 
 O `gerar_exe.py` cria um ambiente isolado em `.build/`, instala ali o PyInstaller e os componentes, e empacota tudo — nada é instalado no seu Python.
 
 No GitHub, dois workflows gratuitos para repositório público:
 
-- **Testes** — a cada push, em Windows e Linux, Python 3.10 e 3.13, com e sem os componentes;
+- **Testes** — a cada push, em Windows e Linux, Python 3.10 e 3.13, com e sem os componentes, incluindo os testes da janela (no Linux, numa tela virtual) e a cobertura mínima;
 - **Executável Windows** — ao criar uma tag `v*` (`git tag v1.0.0 && git push origin v1.0.0`), gera o `.zip` e o publica na página de Releases.
 
 ### Estrutura
@@ -210,7 +231,7 @@ ged/
   catalogo.py           varredura, catálogo em memória, vínculo índice ↔ arquivo
   xml_parser.py         leitura tolerante dos índices XML
   nomes.py              metadados do nome do arquivo e do caminho
-  perfil.py             tipos documentais e padrões de nome (perfil JSON)
+  perfil.py             tipos documentais e padrões de nome (perfil JSON); criar e excluir tipos
   datas.py              datas em qualquer formato e períodos
   busca.py              filtros por campo, período e texto livre nos três escopos
   conteudo.py           texto dos PDFs, com cache de sessão
@@ -219,8 +240,8 @@ ged/
   dependencias.py       instalação automática dos componentes
   cli.py                linha de comando
   exportar/             relatórios TXT, CSV e XLSX (o XLSX sem dependência)
-  gui/                  interface Tkinter: janela, aba Consulta, aba Contagem
-tests/                  testes automáticos, com arquivos de exemplo gerados na hora
+  gui/                  interface Tkinter: janela, aba Consulta, aba Contagem, diálogos de tipo
+tests/                  testes unitários, de regressão e de interface, com arquivos gerados na hora
 ferramentas/            gerar o executável; baixar pacotes para instalação sem internet
 exemplos/               perfil do acervo para editar
 ```

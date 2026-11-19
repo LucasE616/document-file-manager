@@ -1,0 +1,17 @@
+# Configuração do coverage.py, usada no CI e por quem quiser medir localmente:
+#     python -m pip install coverage
+#     python -m coverage run main.py testes
+#     python -m coverage report
+[run]
+source = ged
+branch = true
+
+[report]
+show_missing = true
+skip_covered = true
+# Abaixo disso o CI falha: um código novo sem teste derruba o número.
+# Suba o valor quando a cobertura subir; nunca o baixe para fazer passar.
+fail_under = 80
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:

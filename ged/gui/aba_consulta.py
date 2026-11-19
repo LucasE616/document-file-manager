@@ -47,6 +47,8 @@ class AbaConsulta(ttk.Frame):
         self._fila_previa: queue.Queue = queue.Queue()
         self._ficha_previa = 0
         self._agendamento_previa = None
+        # Um único laço espera as miniaturas, por mais seleções que haja
+        self._laco_previa = None
         self._montar()
 
     # ------------------------------------------------------------ montagem
@@ -194,13 +196,28 @@ class AbaConsulta(ttk.Frame):
                 return
         except tk.TclError:
             return  # a janela principal foi fechada com o diálogo aberto
+        if dialogo.perfil_alterado:
+            self.tipos_alterados()
         if dialogo.escolha is not None:
             self._aplicar_escolha(dialogo.escolha)
+        elif dialogo.perfil_alterado:
+            # Um tipo foi excluído: mostra a lista de novo, já sem ele
+            if self.escolha and self.escolha.chave not in {g.chave for g in self.grupos} | {cat.TIPO_OUTRO}:
+                self._aplicar_escolha(self._escolha_padrao())
+            self.after(10, self.escolher_tipo)
+
+    def tipos_alterados(self) -> None:
+        """O perfil ganhou ou perdeu um tipo: reagrupa o catálogo."""
+        completo = self.app.catalogo_completo
+        if completo is not None:
+            self.grupos, self.sem_tipo = cat.agrupar_por_tipo(completo)
 
     def _aplicar_escolha(self, escolha: Escolha) -> None:
         completo = self.app.catalogo_completo
         if completo is None:
             return
+        if escolha.chave != cat.TIPO_OUTRO and not any(g.chave == escolha.chave for g in self.grupos):
+            escolha = Escolha(chave=cat.TIPO_OUTRO)
         self.escolha = escolha
         if escolha.chave == cat.TIPO_OUTRO:
             self.catalogo = cat.subcatalogo_por_indices(completo, escolha.indices)
@@ -479,10 +496,12 @@ class AbaConsulta(ttk.Frame):
         ficha = self._ficha_previa
         self.var_ficha.set(self._ficha(documento))
         if not documento.localizado:
+            self._parar_previa()
             self._imagem_previa = None
             self.rotulo_previa.configure(image="", text="(sem arquivo para pré-visualizar)")
             return
         if not leitores.imagem_disponivel():
+            self._parar_previa()
             return
         self.rotulo_previa.configure(image="", text="Carregando...")
         caminho = documento.caminho
@@ -492,23 +511,39 @@ class AbaConsulta(ttk.Frame):
             target=lambda: self._fila_previa.put((ficha, leitores.miniatura_ppm(caminho, LARGURA_PREVIA))),
             daemon=True,
         ).start()
-        self.after(40, self._receber_previa)
+        if self._laco_previa is None:
+            self._laco_previa = self.after(40, self._receber_previa)
+
+    def _parar_previa(self) -> None:
+        if self._laco_previa is not None:
+            self.after_cancel(self._laco_previa)
+            self._laco_previa = None
 
     def _receber_previa(self) -> None:
+        """Espera a miniatura da seleção atual e descarta as das anteriores.
+
+        Antes, cada seleção abria um laço próprio de espera; trocando de
+        seleção antes de a miniatura chegar (PDF grande, disco de rede), um
+        laço consumia o resultado e o outro ficava consultando a fila vazia,
+        25 vezes por segundo, até fechar o programa.
+        """
+        self._laco_previa = None
         try:
-            ficha, dados = self._fila_previa.get_nowait()
+            while True:
+                ficha, dados = self._fila_previa.get_nowait()
+                if ficha == self._ficha_previa:
+                    self._exibir_previa(dados)
+                    return
         except queue.Empty:
-            self.after(40, self._receber_previa)
-            return
-        if ficha != self._ficha_previa:
-            # Miniatura de uma seleção antiga: descarta e espera a atual
-            self.after(40, self._receber_previa)
-            return
+            pass
+        self._laco_previa = self.after(40, self._receber_previa)
+
+    def _exibir_previa(self, dados: bytes | None) -> None:
         if not dados:
             self._imagem_previa = None
             self.rotulo_previa.configure(image="", text="(não foi possível gerar a pré-visualização)")
             return
-        self._imagem_previa = tk.PhotoImage(data=dados)
+        self._imagem_previa = tk.PhotoImage(master=self, data=dados)
         self.rotulo_previa.configure(image=self._imagem_previa, text="")
 
     # -------------------------------------------------------- exportação

@@ -23,7 +23,7 @@ from typing import Callable, Iterator
 from . import datas, nomes, xml_parser
 from . import perfil as perfis
 from .leitores import EXTENSOES_SUPORTADAS
-from .texto import normalizar
+from .texto import chave_campo, normalizar
 
 EXTENSOES_XML = {".xml"}
 
@@ -141,13 +141,35 @@ def _tipo_por_texto(texto: str) -> str:
     return ""
 
 
+def _tipo_por_indices(documento: Documento) -> str:
+    """O tipo cujos índices o documento mais preenche, entre os que declaram índices.
+
+    Só os campos que vieram do XML contam: os completados pelo nome do
+    arquivo ou pela pasta (Ano, Número) existem em quase todo documento e
+    enquadrariam tudo no primeiro tipo que os pedisse. Empate fica com o
+    tipo que aparece primeiro no perfil.
+    """
+    preenchidos = {chave_campo(c) for c, v in documento.campos_xml.items() if v.strip()}
+    if not preenchidos:
+        return ""
+    melhor, maior = "", 0
+    for tipo in perfis.ativo().tipos:
+        if not tipo.indices:
+            continue
+        casados = len({chave_campo(i) for i in tipo.indices} & preenchidos)
+        if casados > maior:
+            melhor, maior = tipo.chave, casados
+    return melhor
+
+
 def classificar(documento: Documento, raiz: Path) -> str:
     """Enquadra o documento num dos tipos do perfil, ou em "outro".
 
     As pistas são tentadas da mais específica para a mais genérica: o
     padrão do nome do arquivo, depois o campo "Título" do índice, depois
     o nome das pastas entre o documento e o diretório escolhido — da mais
-    próxima para a mais distante. Pastas acima do diretório escolhido não
+    próxima para a mais distante —, e por último os índices preenchidos,
+    nos tipos que declaram índices. Pastas acima do diretório escolhido não
     contam: "C:\\Usuários\\Despesas da casa\\..." não diz nada sobre o acervo.
     """
     chaves = {tipo.chave for tipo in perfis.ativo().tipos}
@@ -170,7 +192,7 @@ def classificar(documento: Documento, raiz: Path) -> str:
             if pela_pasta:
                 return pela_pasta
 
-    return TIPO_OUTRO
+    return _tipo_por_indices(documento) or TIPO_OUTRO
 
 
 @dataclass
@@ -501,6 +523,8 @@ class GrupoTipo:
     rotulo: str
     documentos: list[Documento] = field(default_factory=list)
     vocabulario: list[str] = field(default_factory=list)
+    # Índices declarados pelo tipo que nenhum documento da pasta tem
+    indices_ausentes: list[str] = field(default_factory=list)
 
     @property
     def total_documentos(self) -> int:
@@ -509,6 +533,26 @@ class GrupoTipo:
     @property
     def total_paginas(self) -> int:
         return sum(d.paginas or 0 for d in self.documentos)
+
+
+def resolver_indices(indices: list[str], vocabulario: list[str]) -> tuple[list[str], list[str]]:
+    """Casa os índices declarados com os nomes que os XML da pasta usam.
+
+    "Vigencia" declarado acha "Vigência" no XML. Devolve os nomes como
+    estão no vocabulário, na ordem declarada, e os que não existem na pasta.
+    """
+    por_chave = {}
+    for campo in vocabulario:
+        por_chave.setdefault(chave_campo(campo), campo)
+    encontrados: list[str] = []
+    ausentes: list[str] = []
+    for indice in indices:
+        campo = por_chave.get(chave_campo(indice))
+        if campo is None:
+            ausentes.append(indice)
+        elif campo not in encontrados:
+            encontrados.append(campo)
+    return encontrados, ausentes
 
 
 def _vocabulario_de(documentos: list[Documento], ordem: list[str]) -> list[str]:
@@ -526,6 +570,7 @@ def agrupar_por_tipo(catalogo: Catalogo) -> tuple[list[GrupoTipo], int]:
     """
     tipos = perfis.ativo().tipos
     grupos = {t.chave: GrupoTipo(chave=t.chave, rotulo=t.rotulo) for t in tipos}
+    declarados = {t.chave: t.indices for t in tipos if t.indices}
     sem_tipo = 0
     for documento in catalogo.documentos:
         chave = classificar(documento, catalogo.raiz)
@@ -534,7 +579,14 @@ def agrupar_por_tipo(catalogo: Catalogo) -> tuple[list[GrupoTipo], int]:
         else:
             sem_tipo += 1
     for grupo in grupos.values():
-        grupo.vocabulario = _vocabulario_de(grupo.documentos, catalogo.vocabulario)
+        if grupo.chave in declarados:
+            # O tipo diz quais são os seus índices: eles viram as colunas,
+            # mesmo que algum documento traga outros campos.
+            grupo.vocabulario, grupo.indices_ausentes = resolver_indices(
+                declarados[grupo.chave], catalogo.vocabulario
+            )
+        else:
+            grupo.vocabulario = _vocabulario_de(grupo.documentos, catalogo.vocabulario)
     return [grupos[t.chave] for t in tipos], sem_tipo
 
 
